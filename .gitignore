@@ -14,3 +14,7 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+
+# Web
+web/node_modules/
+web/dist/

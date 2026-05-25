@@ -8,6 +8,7 @@ import re
 from datetime import date
 
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
@@ -15,6 +16,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": ["https://mpolimen.github.io", "http://localhost:*"]}})
 
 SPREADSHEET_ID    = "1WiEKIPMYBIh0xnART5NQDAUGOXprW8dacOKBfzNXiow"
 INDEX_SHEET       = "Recipe Index"
@@ -399,6 +401,143 @@ def log_recipe():
             format_data_row(service, ids[INDEX_SHEET], row_index)
 
         return jsonify({"status": "ok", "range": updated_range, "date": today}), 200
+
+    except HttpError as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/recipes", methods=["GET"])
+def list_recipes():
+    """Return all rows from Recipe Index as a list of recipe objects."""
+    try:
+        service = get_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{INDEX_SHEET}'!A2:H",
+        ).execute()
+        rows = result.get("values", [])
+        recipes = []
+        for row in rows:
+            # Pad to 8 columns in case trailing cells are empty
+            row += [""] * (8 - len(row))
+            recipes.append({
+                "date":      row[0],
+                "name":      row[1],
+                "category":  row[2],
+                "servings":  row[3],
+                "prep_time": row[4],
+                "cook_time": row[5],
+                "rating":    row[6],
+                "notes":     row[7],
+            })
+        return jsonify(recipes), 200
+    except HttpError as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/recipes/<path:name>", methods=["GET"])
+def get_recipe(name: str):
+    """Return full detail for a single recipe by name (reads its detail tab)."""
+    try:
+        service = get_service()
+
+        # Fetch metadata from Recipe Index
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{INDEX_SHEET}'!A2:H",
+        ).execute()
+        rows   = result.get("values", [])
+        meta   = next((r for r in rows if len(r) > 1 and r[1].lower() == name.lower()), None)
+        if meta is None:
+            return jsonify({"error": "Recipe not found"}), 404
+        meta  += [""] * (8 - len(meta))
+
+        # Fetch detail tab
+        detail = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{meta[1]}'!A1:B200",
+        ).execute()
+        cells = detail.get("values", [])
+
+        # Parse detail tab layout: rows 1-7 are metadata (label in A, value in B)
+        # Then sections: INGREDIENTS, INSTRUCTIONS, NOTES
+        def cell(r, c):
+            return cells[r][c] if r < len(cells) and c < len(cells[r]) else ""
+
+        ingredients, instructions, notes = [], [], ""
+        section = None
+        for i, row in enumerate(cells):
+            if i < 7:
+                continue
+            label = (row[0] if row else "").strip().upper()
+            if label == "INGREDIENTS":
+                section = "ingredients"
+            elif label == "INSTRUCTIONS":
+                section = "instructions"
+            elif label == "NOTES":
+                section = "notes"
+            elif section == "ingredients" and row:
+                ingredients.append({"item": row[0], "quantity": row[1] if len(row) > 1 else ""})
+            elif section == "instructions" and len(row) > 1:
+                instructions.append(row[1])
+            elif section == "notes" and row:
+                notes = row[0]
+
+        return jsonify({
+            "date":         meta[0],
+            "name":         meta[1],
+            "category":     meta[2],
+            "servings":     meta[3],
+            "prep_time":    meta[4],
+            "cook_time":    meta[5],
+            "rating":       meta[6],
+            "notes":        notes or meta[7],
+            "ingredients":  ingredients,
+            "instructions": instructions,
+        }), 200
+
+    except HttpError as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/metrics", methods=["GET"])
+def get_metrics():
+    """Return aggregate stats for the dashboard."""
+    try:
+        service = get_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{INDEX_SHEET}'!A2:H",
+        ).execute()
+        rows = result.get("values", [])
+
+        by_category: dict = {}
+        ratings = []
+        by_month: dict = {}
+
+        for row in rows:
+            row += [""] * (8 - len(row))
+            category = row[2] or "Uncategorized"
+            by_category[category] = by_category.get(category, 0) + 1
+
+            if row[6]:
+                try:
+                    ratings.append(float(row[6]))
+                except ValueError:
+                    pass
+
+            if row[0]:
+                month = row[0][:7]  # "YYYY-MM"
+                by_month[month] = by_month.get(month, 0) + 1
+
+        avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
+
+        return jsonify({
+            "total_recipes":  len(rows),
+            "avg_rating":     avg_rating,
+            "by_category":    by_category,
+            "by_month":       dict(sorted(by_month.items())),
+        }), 200
 
     except HttpError as e:
         return jsonify({"error": str(e)}), 502
