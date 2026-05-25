@@ -1,15 +1,17 @@
 # Personal Chef Assistant
 
-A personal batch-cooking assistant powered by Claude AI. Recipes discussed in Claude are saved directly to a Google Sheet with one command. A weekly cron job scrapes Harris Teeter email flyers, renders them to PDF, and stores them in Google Drive so Claude can factor current deals into meal planning.
+A personal batch-cooking assistant powered by Claude AI. Recipes discussed in Claude are saved directly to a Google Sheet with one command. Meals cooked are logged for metrics tracking. A daily cron job scrapes Harris Teeter email flyers, renders them to PDF, and stores them in Google Drive so Claude can factor current deals into meal planning. A React web app displays the recipe book and a metrics dashboard.
 
 ## Architecture
 
 ```
 Claude.ai (chef project)
     │
-    ├── mcp/      MCP Server (Cloud Run)         ← Claude calls save_recipe tool directly
+    ├── mcp/      MCP Server (Cloud Run)         ← Claude calls save_recipe / log_meal tools
     │                   │
-    │             api/  Recipe API (Cloud Run)    ← writes to Google Sheets
+    │             api/  Recipe API (Cloud Run)    ← reads/writes Google Sheets
+    │                   │
+    │             web/  React Web App (GitHub Pages) ← recipe browser + metrics dashboard
     │
     └── flyer-sync/  HT Flyer Sync (Cloud Run Job)  ← daily cron, Gmail → PDF → Google Drive
 ```
@@ -17,13 +19,22 @@ Claude.ai (chef project)
 ## Components
 
 ### `api/` — Recipe API
-Flask API deployed to Cloud Run. Accepts a `POST /recipe` request and:
-- Duplicates the Recipe Detail template tab and fills it with the recipe
-- Appends ingredients to the Grocery List sheet
-- Appends a row to the Recipe Index with clickable links to both
+Flask API deployed to Cloud Run. Endpoints:
+- `POST /recipe` — creates a Recipe Detail tab, appends ingredients to Grocery List, logs a linked row in Recipe Index
+- `POST /meal` — appends a row to the Meal Log sheet (auto-created on first use) with date, cuisine, servings, and HT savings
+- `GET /recipes` — returns all Recipe Index rows
+- `GET /recipes/<name>` — returns full detail for one recipe (reads its detail tab)
+- `GET /metrics` — returns aggregate stats: recipe counts, ratings distribution, meal counts by cuisine/month, HT savings
 
 ### `mcp/` — MCP Server
-FastMCP server deployed to Cloud Run. Exposes `save_recipe` as a tool that Claude.ai can call natively from a Claude project. Proxies calls through to the Recipe API.
+FastMCP server deployed to Cloud Run. Exposes two tools Claude.ai can call natively:
+- `save_recipe` — saves a full recipe (detail tab + grocery list + index row)
+- `log_meal` — logs a cooked meal with cuisine (Claude infers it), servings, and optional HT deal savings
+
+### `web/` — React Web App
+Vite + React app deployed to GitHub Pages. Two views:
+- **Recipe Book** — searchable, filterable (by time: ≤30/≤60/≤90 min), sortable (newest, rating, fastest) recipe grid with detail pages and interactive ingredient checklists
+- **Metrics** — KPI cards (total recipes, avg rating, top cuisine, this month, meals cooked, HT savings) and charts (meals by cuisine pie, ratings distribution, monthly HT savings, recipes/meals by month)
 
 ### `flyer-sync/` — HT Flyer Sync
 Cloud Run Job triggered daily at 9am UTC by Cloud Scheduler. Searches Gmail for emails labeled `harris-teeter`, extracts the "View Online" link, renders each flyer to PDF via Playwright headless Chromium, and uploads to a Google Drive folder. Keeps a rolling max of 10 PDFs (FIFO). Deduplicates so re-runs never upload the same flyer twice.
@@ -35,7 +46,9 @@ One-time and CLI scripts: `setup_sheets.py` (initial Google Sheet setup) and `lo
 System prompt for the Claude.ai project. Configures Claude as a personal chef assistant with:
 - Allergy awareness (peanuts, walnuts, pecans, pistachios, chickpeas)
 - Batch cooking focus with work lunch vs. dinner modes
-- Recipe logging flow that calls `save_recipe` via MCP
+- Five opening questions asked at the start of every conversation
+- Recipe logging flow: calls `save_recipe` via MCP
+- Meal logging flow: asks for rating + HT savings, then calls `log_meal` via MCP
 - Harris Teeter deal awareness via the Drive flyer folder
 
 ## Google Sheets Structure
@@ -46,6 +59,7 @@ System prompt for the Claude.ai project. Configures Claude as a personal chef as
 | Recipe Detail `<name>` | Full recipe (duplicated from template per save) |
 | Recipe Detail template | Template tab — do not modify |
 | Grocery List | All ingredients across all recipes, tagged by recipe |
+| Meal Log | One row per cooked meal: date, recipe, cuisine, servings, HT savings |
 
 ## Setup
 
@@ -62,7 +76,7 @@ Create a Desktop OAuth client in Google Cloud Console and save as `chef-google-c
 ```bash
 cd api && bash deploy.sh
 ```
-This builds and pushes the Docker image, deploys to Cloud Run, and wires up the `GOOGLE_SERVICE_ACCOUNT_JSON` and `API_KEY` secrets from Secret Manager.
+Builds and pushes the Docker image, deploys to Cloud Run, and wires up the `GOOGLE_SERVICE_ACCOUNT_JSON` and `API_KEY` secrets from Secret Manager.
 
 ### 3. Deploy MCP Server
 ```bash
@@ -80,14 +94,19 @@ Then deploy to Cloud Run Jobs + Cloud Scheduler:
 cd flyer-sync && bash deploy.sh
 ```
 
-### 5. Configure Claude project
+### 5. Deploy Web App
+The web app auto-deploys via GitHub Actions on every push to `main` that touches `web/**`. To set up:
+1. Enable GitHub Pages in repo settings → set source to **GitHub Actions**
+2. Push — the workflow in `.github/workflows/deploy-web.yml` builds and deploys automatically
+
+### 6. Configure Claude project
 Paste the contents of `claude-project-instructions.md` into your Claude.ai project instructions. Add the Google Drive connector so Claude can read flyer PDFs.
 
 ## GCP Resources
 
 | Resource | Purpose | Cost |
 |----------|---------|------|
-| Cloud Run (recipe-api) | Recipe save API | Free tier |
+| Cloud Run (recipe-api) | Recipe save + meal log API | Free tier |
 | Cloud Run (recipe-mcp) | MCP tool server | Free tier |
 | Cloud Run Job (ht-flyer-sync) | Daily flyer sync | Free tier |
 | Cloud Scheduler | Triggers daily job | Free tier |
@@ -108,7 +127,7 @@ gcloud billing budgets create \
 
 | Secret | Used by | Description |
 |--------|---------|-------------|
-| `recipe-api-key` | recipe-api, recipe-mcp | API key for the recipe endpoint |
+| `recipe-api-key` | recipe-api, recipe-mcp | API key for write endpoints |
 | `google-service-account-key` | recipe-api | Service account JSON for Sheets access |
 | `ht-oauth-token` | ht-flyer-sync | OAuth token JSON for Gmail + Drive access |
 
