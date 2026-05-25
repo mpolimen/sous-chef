@@ -34,8 +34,9 @@ from playwright.sync_api import sync_playwright
 # ── Config ────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR      = Path(__file__).parent
-CREDS_FILE      = SCRIPT_DIR / "chef-google-creds.json"
-TOKEN_FILE      = SCRIPT_DIR / "ht_token.json"   # separate from chef token
+PROJECT_ROOT    = SCRIPT_DIR.parent
+CREDS_FILE      = PROJECT_ROOT / "chef-google-creds.json"
+TOKEN_FILE      = PROJECT_ROOT / "ht_token.json"   # separate from chef token
 DRIVE_FOLDER    = "Harris Teeter Flyers"
 GMAIL_LABEL     = "harris-teeter"
 MAX_FILES       = 10   # delete down to MAX_FILES - 1 before uploading
