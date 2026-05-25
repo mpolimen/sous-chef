@@ -1,0 +1,16 @@
+# Credentials & tokens — never commit these
+chef-google-creds.json
+token.json
+ht_token.json
+
+# Logs
+*.log
+
+# Claude Code
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
