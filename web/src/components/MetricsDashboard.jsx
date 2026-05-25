@@ -33,8 +33,8 @@ export default function MetricsDashboard() {
   if (error)   return <div className="centered"><p className="error-msg">⚠ {error}</p></div>
   if (!metrics) return null
 
-  // Category pie data
-  const categoryData = Object.entries(metrics.by_category || {})
+  // Cuisine pie data (from meal log)
+  const cuisinePieData = Object.entries(metrics.meals_by_cuisine || {})
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
 
@@ -48,11 +48,6 @@ export default function MetricsDashboard() {
     count,
   }))
 
-  // Meals by cuisine
-  const cuisineData = Object.entries(metrics.meals_by_cuisine || {})
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-
   // Monthly meals
   const monthlyMealsData = Object.entries(metrics.meals_by_month || {}).map(([month, count]) => ({
     name: month.slice(5),
@@ -65,7 +60,7 @@ export default function MetricsDashboard() {
     savings,
   }))
 
-  const topCategory = categoryData[0]?.name
+  const topCuisine = cuisinePieData[0]?.name
 
   return (
     <div>
@@ -80,9 +75,9 @@ export default function MetricsDashboard() {
           sub="out of 5"
         />
         <KpiCard
-          label="Top Category"
-          value={topCategory}
-          sub={topCategory ? `${metrics.by_category[topCategory]} recipes` : null}
+          label="Top Cuisine"
+          value={topCuisine ?? '—'}
+          sub={topCuisine ? `${metrics.meals_by_cuisine[topCuisine]} meals` : null}
         />
         <KpiCard
           label="This Month"
@@ -101,30 +96,32 @@ export default function MetricsDashboard() {
       </div>
 
       <div className="charts-grid">
-        {/* Category breakdown */}
-        <div className="chart-card">
-          <div className="chart-title">Recipes by Category</div>
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie
-                data={categoryData}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                outerRadius={90}
-                innerRadius={50}
-                paddingAngle={3}
-              >
-                {categoryData.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v) => [`${v} recipes`, '']} />
-              <Legend iconType="circle" iconSize={10} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        {/* Cuisine breakdown */}
+        {cuisinePieData.length > 0 && (
+          <div className="chart-card">
+            <div className="chart-title">Meals by Cuisine</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={cuisinePieData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  innerRadius={50}
+                  paddingAngle={3}
+                >
+                  {cuisinePieData.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v) => [`${v} meals`, '']} />
+                <Legend iconType="circle" iconSize={10} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         {/* Ratings distribution */}
         <div className="chart-card">
@@ -139,22 +136,6 @@ export default function MetricsDashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-
-        {/* Meals by cuisine */}
-        {cuisineData.length > 0 && (
-          <div className="chart-card">
-            <div className="chart-title">Meals by Cuisine</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={cuisineData} layout="vertical" barSize={20}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={90} />
-                <Tooltip cursor={{ fill: 'var(--accent-light)' }} formatter={(v) => [v, 'Meals']} />
-                <Bar dataKey="count" fill="var(--accent)" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
 
         {/* Monthly HT savings */}
         {htSavingsData.length > 0 && (
