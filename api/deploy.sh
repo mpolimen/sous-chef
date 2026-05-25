@@ -1,6 +1,6 @@
 #!/bin/bash
 # Deploy recipe-api to Google Cloud Run.
-# Run from the chef/ directory: bash deploy.sh
+# Run from the api/ directory: bash deploy.sh
 set -euo pipefail
 
 PROJECT_ID="personal-494020"

@@ -1,6 +1,6 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "-f", "Dockerfile.ht", "-t", "gcr.io/personal-494020/ht-flyer-sync", "."]
+    args: ["build", "-f", "Dockerfile", "-t", "gcr.io/personal-494020/ht-flyer-sync", "."]
 images:
   - gcr.io/personal-494020/ht-flyer-sync
 timeout: 1200s

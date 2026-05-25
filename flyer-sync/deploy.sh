@@ -1,6 +1,6 @@
 #!/bin/bash
-# Deploy ht_flyer_sync as a Cloud Run Job triggered weekly by Cloud Scheduler.
-# Run from the chef/ directory: bash deploy_ht.sh
+# Deploy ht_flyer_sync as a Cloud Run Job triggered daily by Cloud Scheduler.
+# Run from the flyer-sync/ directory: bash deploy.sh
 set -euo pipefail
 
 PROJECT_ID="personal-494020"
@@ -9,18 +9,18 @@ JOB_NAME="ht-flyer-sync"
 SA_EMAIL="recipe-api-sa@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="gcr.io/${PROJECT_ID}/${JOB_NAME}"
 SECRET_NAME="ht-oauth-token"
-SCHEDULE="0 8 * * 3"   # Wednesday 8am UTC
+SCHEDULE="0 9 * * *"   # Daily 9am UTC
 
 # ── 1. Upload current ht_token.json to Secret Manager ────────────────────────
 echo "==> Creating/updating Secret Manager secret '${SECRET_NAME}'..."
 if gcloud secrets describe "${SECRET_NAME}" --project="${PROJECT_ID}" &>/dev/null; then
   gcloud secrets versions add "${SECRET_NAME}" \
-    --data-file=ht_token.json \
+    --data-file=../ht_token.json \
     --project="${PROJECT_ID}"
   echo "    Added new version to existing secret."
 else
   gcloud secrets create "${SECRET_NAME}" \
-    --data-file=ht_token.json \
+    --data-file=../ht_token.json \
     --replication-policy=automatic \
     --project="${PROJECT_ID}"
   echo "    Secret created."
@@ -37,7 +37,7 @@ gcloud secrets add-iam-policy-binding "${SECRET_NAME}" \
 echo "==> Building image via Cloud Build (this takes a few minutes — Playwright base is large)..."
 gcloud builds submit \
   --project="${PROJECT_ID}" \
-  --config=cloudbuild.ht.yaml \
+  --config=cloudbuild.yaml \
   .
 
 # ── 4. Deploy Cloud Run Job ───────────────────────────────────────────────────
@@ -98,7 +98,7 @@ echo ""
 echo "============================================================"
 echo "  Deployment complete!"
 echo ""
-echo "  Schedule : ${SCHEDULE} UTC (Wednesday 8am)"
+echo "  Schedule : ${SCHEDULE} UTC (daily 9am)"
 echo "  Job      : ${JOB_NAME} in ${REGION}"
 echo ""
 echo "  To trigger a manual test run:"

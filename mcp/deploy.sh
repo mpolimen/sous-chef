@@ -1,6 +1,6 @@
 #!/bin/bash
 # Deploy the MCP server to Cloud Run as a separate service.
-# Run from the chef/ directory: bash deploy_mcp.sh
+# Run from the mcp/ directory: bash deploy.sh
 set -euo pipefail
 
 PROJECT_ID="personal-494020"
@@ -12,7 +12,7 @@ IMAGE="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
 echo "==> Building MCP server image via Cloud Build..."
 gcloud builds submit \
   --project="${PROJECT_ID}" \
-  --config=cloudbuild.mcp.yaml \
+  --config=cloudbuild.yaml \
   .
 
 echo "==> Granting service account access to recipe-api-key secret (idempotent)..."

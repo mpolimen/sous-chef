@@ -7,31 +7,34 @@ A personal batch-cooking assistant powered by Claude AI. Recipes discussed in Cl
 ```
 Claude.ai (chef project)
     │
-    ├── MCP Server (Cloud Run)         ← Claude calls save_recipe tool directly
-    │       │
-    │       └── Recipe API (Cloud Run) ← writes to Google Sheets
+    ├── mcp/      MCP Server (Cloud Run)         ← Claude calls save_recipe tool directly
+    │                   │
+    │             api/  Recipe API (Cloud Run)    ← writes to Google Sheets
     │
-    └── HT Flyer Sync (Cloud Run Job)  ← daily cron, Gmail → PDF → Google Drive
+    └── flyer-sync/  HT Flyer Sync (Cloud Run Job)  ← daily cron, Gmail → PDF → Google Drive
 ```
 
 ## Components
 
-### Recipe API (`app.py`)
+### `api/` — Recipe API
 Flask API deployed to Cloud Run. Accepts a `POST /recipe` request and:
 - Duplicates the Recipe Detail template tab and fills it with the recipe
 - Appends ingredients to the Grocery List sheet
 - Appends a row to the Recipe Index with clickable links to both
 
-### MCP Server (`mcp_server.py`)
+### `mcp/` — MCP Server
 FastMCP server deployed to Cloud Run. Exposes `save_recipe` as a tool that Claude.ai can call natively from a Claude project. Proxies calls through to the Recipe API.
 
-### HT Flyer Sync (`ht_flyer_sync_job.py`)
+### `flyer-sync/` — HT Flyer Sync
 Cloud Run Job triggered daily at 9am UTC by Cloud Scheduler. Searches Gmail for emails labeled `harris-teeter`, extracts the "View Online" link, renders each flyer to PDF via Playwright headless Chromium, and uploads to a Google Drive folder. Keeps a rolling max of 10 PDFs (FIFO). Deduplicates so re-runs never upload the same flyer twice.
 
-### Claude Project Instructions (`claude-project-instructions.md`)
+### `scripts/` — Utilities
+One-time and CLI scripts: `setup_sheets.py` (initial Google Sheet setup) and `log_recipe.py` (local CLI logging).
+
+### `claude-project-instructions.md`
 System prompt for the Claude.ai project. Configures Claude as a personal chef assistant with:
-- Allergy awareness (peanuts, walnuts, pecans)
-- Batch cooking focus (4–6 portions, storage/freezing notes)
+- Allergy awareness (peanuts, walnuts, pecans, pistachios, chickpeas)
+- Batch cooking focus with work lunch vs. dinner modes
 - Recipe logging flow that calls `save_recipe` via MCP
 - Harris Teeter deal awareness via the Drive flyer folder
 
@@ -57,24 +60,24 @@ Create a Desktop OAuth client in Google Cloud Console and save as `chef-google-c
 
 ### 2. Deploy Recipe API
 ```bash
-bash deploy.sh
+cd api && bash deploy.sh
 ```
 This builds and pushes the Docker image, deploys to Cloud Run, and wires up the `GOOGLE_SERVICE_ACCOUNT_JSON` and `API_KEY` secrets from Secret Manager.
 
 ### 3. Deploy MCP Server
 ```bash
-bash deploy_mcp.sh
+cd mcp && bash deploy.sh
 ```
 Add the printed `/mcp` URL as a custom connector in your Claude.ai project settings.
 
 ### 4. Deploy HT Flyer Sync
 First authorize OAuth locally (opens a browser):
 ```bash
-python3 ht_flyer_sync.py
+python3 flyer-sync/ht_flyer_sync.py
 ```
 Then deploy to Cloud Run Jobs + Cloud Scheduler:
 ```bash
-bash deploy_ht.sh
+cd flyer-sync && bash deploy.sh
 ```
 
 ### 5. Configure Claude project
