@@ -22,6 +22,7 @@ SPREADSHEET_ID    = "1WiEKIPMYBIh0xnART5NQDAUGOXprW8dacOKBfzNXiow"
 INDEX_SHEET       = "Recipe Index"
 GROCERY_SHEET     = "Grocery List"
 TEMPLATE_SHEET    = "Recipe Detail template"
+MEAL_LOG_SHEET    = "Meal Log"
 SCOPES            = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # Alternating row colors for Recipe Index data rows
@@ -56,6 +57,44 @@ def all_sheet_ids(service) -> dict:
     meta = service.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
     return {s["properties"]["title"]: s["properties"]["sheetId"]
             for s in meta["sheets"]}
+
+
+def ensure_meal_log_sheet(service, ids: dict) -> int:
+    if MEAL_LOG_SHEET in ids:
+        return ids[MEAL_LOG_SHEET]
+
+    resp = service.spreadsheets().batchUpdate(
+        spreadsheetId=SPREADSHEET_ID,
+        body={"requests": [{"addSheet": {"properties": {"title": MEAL_LOG_SHEET}}}]},
+    ).execute()
+    sheet_id = resp["replies"][0]["addSheet"]["properties"]["sheetId"]
+    ids[MEAL_LOG_SHEET] = sheet_id
+
+    service.spreadsheets().values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"'{MEAL_LOG_SHEET}'!A1:F1",
+        valueInputOption="USER_ENTERED",
+        body={"values": [["Date", "Recipe Name", "Cuisine", "Servings", "HT Savings ($)", "Notes"]]},
+    ).execute()
+
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=SPREADSHEET_ID,
+        body={"requests": [{"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": {"red": 0.18, "green": 0.36, "blue": 0.24},
+                "textFormat": {
+                    "bold": True, "fontSize": 11,
+                    "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                },
+                "verticalAlignment": "MIDDLE",
+                "horizontalAlignment": "CENTER",
+            }},
+            "fields": "userEnteredFormat(backgroundColor,textFormat,verticalAlignment,horizontalAlignment)",
+        }}]},
+    ).execute()
+
+    return sheet_id
 
 
 # ── Formatting ───────────────────────────────────────────────────────────────
@@ -406,6 +445,64 @@ def log_recipe():
         return jsonify({"error": str(e)}), 502
 
 
+@app.route("/meal", methods=["POST"])
+@require_api_key
+def log_meal():
+    """Log a cooked meal to the Meal Log sheet (auto-created if absent)."""
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "'name' is required"}), 400
+
+    try:
+        service = get_service()
+        ids     = all_sheet_ids(service)
+        sheet_id = ensure_meal_log_sheet(service, ids)
+        today   = date.today().isoformat()
+
+        row = [[
+            today,
+            name,
+            data.get("cuisine", ""),
+            data.get("servings", ""),
+            data.get("ht_savings", ""),
+            data.get("notes", ""),
+        ]]
+
+        result = service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{MEAL_LOG_SHEET}'!A:F",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": row},
+        ).execute()
+
+        updated_range = result.get("updates", {}).get("updatedRange", "")
+        match = re.search(r"!A(\d+)", updated_range)
+        if match:
+            row_index = int(match.group(1)) - 1
+            bg = ROW_COLORS[row_index % 2]
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=SPREADSHEET_ID,
+                body={"requests": [{"repeatCell": {
+                    "range": {"sheetId": sheet_id,
+                              "startRowIndex": row_index, "endRowIndex": row_index + 1},
+                    "cell": {"userEnteredFormat": {
+                        "backgroundColor": bg,
+                        "textFormat": {"bold": False, "fontSize": 10},
+                        "verticalAlignment": "MIDDLE",
+                        "horizontalAlignment": "LEFT",
+                    }},
+                    "fields": "userEnteredFormat(backgroundColor,textFormat,verticalAlignment,horizontalAlignment)",
+                }}]},
+            ).execute()
+
+        return jsonify({"status": "ok", "meal": name, "date": today}), 200
+
+    except HttpError as e:
+        return jsonify({"error": str(e)}), 502
+
+
 @app.route("/recipes", methods=["GET"])
 def list_recipes():
     """Return all rows from Recipe Index as a list of recipe objects."""
@@ -505,6 +602,8 @@ def get_metrics():
     """Return aggregate stats for the dashboard."""
     try:
         service = get_service()
+
+        # Recipe Index
         result = service.spreadsheets().values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"'{INDEX_SHEET}'!A2:H",
@@ -519,24 +618,69 @@ def get_metrics():
             row += [""] * (8 - len(row))
             category = row[2] or "Uncategorized"
             by_category[category] = by_category.get(category, 0) + 1
-
             if row[6]:
                 try:
                     ratings.append(float(row[6]))
                 except ValueError:
                     pass
-
             if row[0]:
-                month = row[0][:7]  # "YYYY-MM"
+                month = row[0][:7]
                 by_month[month] = by_month.get(month, 0) + 1
 
         avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
 
+        # Meal Log
+        ids = all_sheet_ids(service)
+        total_meals       = 0
+        total_servings    = 0
+        total_ht_savings  = 0.0
+        meals_by_cuisine: dict  = {}
+        meals_by_month: dict    = {}
+        monthly_ht_savings: dict = {}
+
+        if MEAL_LOG_SHEET in ids:
+            meal_result = service.spreadsheets().values().get(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"'{MEAL_LOG_SHEET}'!A2:F",
+            ).execute()
+            meal_rows = meal_result.get("values", [])
+            total_meals = len(meal_rows)
+
+            for mrow in meal_rows:
+                mrow += [""] * (6 - len(mrow))
+                if mrow[3]:
+                    try:
+                        total_servings += int(mrow[3])
+                    except ValueError:
+                        pass
+                savings = 0.0
+                if mrow[4]:
+                    try:
+                        savings = float(mrow[4])
+                        total_ht_savings += savings
+                    except ValueError:
+                        pass
+                cuisine = mrow[2] or "Other"
+                meals_by_cuisine[cuisine] = meals_by_cuisine.get(cuisine, 0) + 1
+                if mrow[0]:
+                    month = mrow[0][:7]
+                    meals_by_month[month] = meals_by_month.get(month, 0) + 1
+                    if savings:
+                        monthly_ht_savings[month] = round(
+                            monthly_ht_savings.get(month, 0.0) + savings, 2
+                        )
+
         return jsonify({
-            "total_recipes":  len(rows),
-            "avg_rating":     avg_rating,
-            "by_category":    by_category,
-            "by_month":       dict(sorted(by_month.items())),
+            "total_recipes":      len(rows),
+            "avg_rating":         avg_rating,
+            "by_category":        by_category,
+            "by_month":           dict(sorted(by_month.items())),
+            "total_meals":        total_meals,
+            "total_servings":     total_servings,
+            "total_ht_savings":   round(total_ht_savings, 2),
+            "meals_by_cuisine":   meals_by_cuisine,
+            "meals_by_month":     dict(sorted(meals_by_month.items())),
+            "monthly_ht_savings": dict(sorted(monthly_ht_savings.items())),
         }), 200
 
     except HttpError as e:

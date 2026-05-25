@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 RECIPE_API_URL = "https://recipe-api-476979361711.us-central1.run.app/recipe"
+MEAL_API_URL   = "https://recipe-api-476979361711.us-central1.run.app/meal"
 
 # Disable localhost-only DNS rebinding protection — Cloud Run provides HTTPS
 mcp = FastMCP(
@@ -75,6 +76,47 @@ def save_recipe(
         f"Saved '{name}' to Recipe Book — "
         f"detail tab created, {data.get('ingredients_added', 0)} ingredients logged to grocery list."
     )
+
+
+@mcp.tool()
+def log_meal(
+    name: str,
+    cuisine: str,
+    servings: int = 0,
+    ht_savings: float = 0.0,
+    notes: str = "",
+) -> str:
+    """
+    Log a meal that was actually cooked today.
+
+    Call this when the user says they made, cooked, or prepared a recipe.
+    Infer cuisine from the recipe name (e.g. Greek, Italian, American, Asian, Mexican, Mediterranean, etc.)
+
+    Args:
+        name:        Recipe name (match a saved recipe when possible)
+        cuisine:     Cuisine type inferred from the recipe
+        servings:    Number of servings made (0 if unknown)
+        ht_savings:  Dollar amount saved using Harris Teeter flyer deals (0.0 if none)
+        notes:       Optional notes (substitutions, variations, how it turned out)
+    """
+    payload = {
+        "name":       name,
+        "cuisine":    cuisine,
+        "servings":   servings or "",
+        "ht_savings": ht_savings or "",
+        "notes":      notes,
+    }
+
+    with httpx.Client(timeout=30.0) as client:
+        response = client.post(
+            MEAL_API_URL,
+            json=payload,
+            headers={"X-API-Key": os.environ["RECIPE_API_KEY"]},
+        )
+        response.raise_for_status()
+
+    savings_str = f" (saved ${ht_savings:.2f} with HT deals)" if ht_savings else ""
+    return f"Logged '{name}' ({cuisine}) to Meal Log{savings_str}."
 
 
 if __name__ == "__main__":

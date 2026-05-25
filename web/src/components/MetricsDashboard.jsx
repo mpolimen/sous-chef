@@ -39,7 +39,7 @@ export default function MetricsDashboard() {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
 
-  // Ratings bar data: count recipes by integer rating bucket
+  // Ratings bar data
   const ratingBuckets = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }
   recipes.forEach(r => {
     const n = Math.round(parseFloat(r.rating))
@@ -47,13 +47,29 @@ export default function MetricsDashboard() {
   })
   const ratingsData = Object.entries(ratingBuckets).map(([name, count]) => ({ name: `★${name}`, count }))
 
-  // Monthly activity
+  // Monthly recipes
   const monthlyData = Object.entries(metrics.by_month || {}).map(([month, count]) => ({
-    name: month.slice(5),  // "MM" from "YYYY-MM"
+    name: month.slice(5),
     count,
   }))
 
-  // Top category
+  // Meals by cuisine
+  const cuisineData = Object.entries(metrics.meals_by_cuisine || {})
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+
+  // Monthly meals
+  const monthlyMealsData = Object.entries(metrics.meals_by_month || {}).map(([month, count]) => ({
+    name: month.slice(5),
+    count,
+  }))
+
+  // Monthly HT savings
+  const htSavingsData = Object.entries(metrics.monthly_ht_savings || {}).map(([month, savings]) => ({
+    name: month.slice(5),
+    savings,
+  }))
+
   const topCategory = categoryData[0]?.name
 
   return (
@@ -80,6 +96,12 @@ export default function MetricsDashboard() {
             return metrics.by_month?.[thisMonth] ?? 0
           })()}
           sub="recipes logged"
+        />
+        <KpiCard label="Meals Cooked" value={metrics.total_meals ?? 0} sub="times cooked" />
+        <KpiCard
+          label="HT Savings"
+          value={`$${(metrics.total_ht_savings ?? 0).toFixed(2)}`}
+          sub="from flyer deals"
         />
       </div>
 
@@ -123,7 +145,39 @@ export default function MetricsDashboard() {
           </ResponsiveContainer>
         </div>
 
-        {/* Monthly activity */}
+        {/* Meals by cuisine */}
+        {cuisineData.length > 0 && (
+          <div className="chart-card">
+            <div className="chart-title">Meals by Cuisine</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={cuisineData} layout="vertical" barSize={20}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={90} />
+                <Tooltip cursor={{ fill: 'var(--accent-light)' }} formatter={(v) => [v, 'Meals']} />
+                <Bar dataKey="count" fill="var(--accent)" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Monthly HT savings */}
+        {htSavingsData.length > 0 && (
+          <div className="chart-card">
+            <div className="chart-title">Monthly HT Savings</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={htSavingsData} barSize={28}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={40} tickFormatter={(v) => `$${v}`} />
+                <Tooltip cursor={{ fill: 'var(--accent-light)' }} formatter={(v) => [`$${v.toFixed(2)}`, 'Saved']} />
+                <Bar dataKey="savings" fill="var(--gold)" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Monthly recipes */}
         {monthlyData.length > 0 && (
           <div className="chart-card full-width">
             <div className="chart-title">Recipes Logged by Month</div>
@@ -134,6 +188,22 @@ export default function MetricsDashboard() {
                 <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={24} />
                 <Tooltip cursor={{ fill: 'var(--accent-light)' }} formatter={(v) => [v, 'Recipes']} />
                 <Bar dataKey="count" fill="var(--gold)" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Monthly meals cooked */}
+        {monthlyMealsData.length > 0 && (
+          <div className="chart-card full-width">
+            <div className="chart-title">Meals Cooked by Month</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={monthlyMealsData} barSize={28}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={24} />
+                <Tooltip cursor={{ fill: 'var(--accent-light)' }} formatter={(v) => [v, 'Meals']} />
+                <Bar dataKey="count" fill="var(--accent)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

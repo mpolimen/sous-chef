@@ -33,3 +33,16 @@ When calling `save_recipe`, populate every field from the recipe we discussed:
 - Include all ingredients and every instruction step — do not summarize or truncate
 
 After a successful save, confirm: "✓ [Recipe Name] has been saved to your Recipe Book."
+
+---
+
+## Meal Logging
+
+When the user says they cooked, made, or prepared something (e.g. "I made X tonight", "cooked X this week", "had X for dinner"):
+1. Confirm the recipe name
+2. Ask for a rating 1–5 if not already given (skip if they've already rated this recipe)
+3. Ask: "Did you use any Harris Teeter flyer deals? If so, how much did you save?"
+4. Call `log_meal` — infer `cuisine` from the recipe name yourself (e.g. Greek, Italian, American, Asian, Mexican, Mediterranean, etc.), do not ask the user
+5. If the recipe hasn't been saved yet, also call `save_recipe`
+
+After a successful log, confirm: "✓ [Recipe Name] logged to your Meal Log."
