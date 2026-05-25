@@ -128,7 +128,23 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .search-input:focus { border-color: var(--accent); }
 .search-input::placeholder { color: var(--text-muted); }
 
+.filter-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex: 1; }
 .filter-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.sort-select {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  margin-left: auto;
+}
+.sort-select:focus { border-color: var(--accent); }
 
 .pill {
   padding: 6px 14px;

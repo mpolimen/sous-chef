@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
-import { fetchMetrics, fetchRecipes } from '../api'
+import { fetchMetrics } from '../api'
 
 const COLORS = ['#4A7C59', '#C8874A', '#7C9E8A', '#E8A87C', '#2D5940', '#9BB5A3', '#B8834A', '#D4B896']
 
@@ -19,13 +19,12 @@ function KpiCard({ label, value, sub }) {
 
 export default function MetricsDashboard() {
   const [metrics, setMetrics] = useState(null)
-  const [recipes, setRecipes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
 
   useEffect(() => {
-    Promise.all([fetchMetrics(), fetchRecipes()])
-      .then(([m, r]) => { setMetrics(m); setRecipes(r) })
+    fetchMetrics()
+      .then(setMetrics)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -39,13 +38,9 @@ export default function MetricsDashboard() {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
 
-  // Ratings bar data
-  const ratingBuckets = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }
-  recipes.forEach(r => {
-    const n = Math.round(parseFloat(r.rating))
-    if (n >= 1 && n <= 5) ratingBuckets[String(n)]++
-  })
-  const ratingsData = Object.entries(ratingBuckets).map(([name, count]) => ({ name: `★${name}`, count }))
+  // Ratings bar data from metrics endpoint
+  const ratingsData = Object.entries(metrics.ratings_distribution || {})
+    .map(([name, count]) => ({ name: `★${name}`, count }))
 
   // Monthly recipes
   const monthlyData = Object.entries(metrics.by_month || {}).map(([month, count]) => ({

@@ -629,6 +629,11 @@ def get_metrics():
 
         avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
 
+        rating_buckets: dict = {str(i): 0 for i in range(1, 6)}
+        for r in ratings:
+            bucket = str(min(5, max(1, round(r))))
+            rating_buckets[bucket] = rating_buckets.get(bucket, 0) + 1
+
         # Meal Log
         ids = all_sheet_ids(service)
         total_meals       = 0
@@ -673,6 +678,7 @@ def get_metrics():
         return jsonify({
             "total_recipes":      len(rows),
             "avg_rating":         avg_rating,
+            "ratings_distribution": rating_buckets,
             "by_category":        by_category,
             "by_month":           dict(sorted(by_month.items())),
             "total_meals":        total_meals,
