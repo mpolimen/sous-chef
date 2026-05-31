@@ -260,7 +260,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 @media (max-width: 720px) {
   .detail-body { grid-template-columns: 1fr; }
-  .ingredients-panel { position: static; top: auto; }
 }
 
 .detail-section-title {
@@ -283,6 +282,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   position: sticky;
   top: calc(var(--nav-h) + 20px);
 }
+@media (max-width: 720px) { .ingredients-panel { position: static; top: auto; } }
 
 .ingredient-item {
   display: flex; align-items: flex-start; gap: 12px;
