@@ -9,7 +9,7 @@ JOB_NAME="ht-flyer-sync"
 SA_EMAIL="recipe-api-sa@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="gcr.io/${PROJECT_ID}/${JOB_NAME}"
 SECRET_NAME="ht-oauth-token"
-SCHEDULE="0 9 * * *"   # Daily 9am UTC
+SCHEDULE="0 10 * * *"   # Daily 10am UTC (6am EDT)
 
 # ── 1. Upload current ht_token.json to Secret Manager ────────────────────────
 echo "==> Creating/updating Secret Manager secret '${SECRET_NAME}'..."
