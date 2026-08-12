@@ -54,6 +54,25 @@ log = logging.getLogger(__name__)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+def prune_old_secret_versions(sm: secretmanager.SecretManagerServiceClient, secret_id: str, keep: int = 2) -> None:
+    """Destroy all but the most recent `keep` enabled versions of a secret.
+
+    Secret Manager bills for replica storage of every version, including
+    disabled/old ones, so a secret that's rewritten on every run (like
+    ht-oauth-token during token refresh) accumulates versions and cost
+    indefinitely unless old ones are destroyed.
+    """
+    parent = f"projects/{PROJECT_ID}/secrets/{secret_id}"
+    versions = [
+        v for v in sm.list_secret_versions(request={"parent": parent})
+        if v.state == secretmanager.SecretVersion.State.ENABLED
+    ]
+    versions.sort(key=lambda v: v.create_time, reverse=True)
+    for v in versions[keep:]:
+        sm.destroy_secret_version(request={"name": v.name})
+        log.info("Destroyed old secret version: %s", v.name)
+
+
 def get_credentials() -> Credentials:
     sm = secretmanager.SecretManagerServiceClient()
     response = sm.access_secret_version(request={"name": SECRET_NAME})
@@ -73,6 +92,12 @@ def get_credentials() -> Credentials:
             }
         )
         log.info("Refreshed token saved to Secret Manager")
+
+        try:
+            prune_old_secret_versions(sm, "ht-oauth-token")
+        except Exception as e:
+            # Non-critical — don't fail the run over cleanup
+            log.warning("Failed to prune old secret versions: %s", e)
 
     return creds
 

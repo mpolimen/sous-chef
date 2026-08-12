@@ -110,8 +110,18 @@ Paste the contents of `claude-project-instructions.md` into your Claude.ai proje
 | Cloud Run (recipe-mcp) | MCP tool server | Free tier |
 | Cloud Run Job (ht-flyer-sync) | Daily flyer sync | Free tier |
 | Cloud Scheduler | Triggers daily job | Free tier |
-| Secret Manager | API keys & OAuth token | Free tier |
+| Secret Manager | API keys & OAuth token | Free tier (if old versions are pruned — see gotcha below) |
 | Container Registry | Docker images | ~$0.10–0.20/month |
+
+**Billing gotcha — Secret Manager version replica storage:** Secret Manager
+bills for storing *every version* of a secret, including disabled ones, not
+just the latest. `ht-oauth-token` is rewritten on every Cloud Run Job
+execution where the OAuth token has expired (`flyer-sync/ht_flyer_sync_job.py`),
+so without cleanup it accumulates one new version per run indefinitely —
+this alone drove "secret version replica storage" to ~$3.30/month. The job
+now destroys old versions automatically after each write (keeping the 2
+newest), but if versions have already piled up, run the one-off cleanup
+script below to destroy the backlog.
 
 Set a billing budget alert at $1/month as a safeguard:
 ```bash
@@ -128,7 +138,7 @@ gcloud billing budgets create \
 | Secret | Used by | Description |
 |--------|---------|-------------|
 | `recipe-api-key` | recipe-api, recipe-mcp | API key for write endpoints |
-| `google-service-account-key` | recipe-api | Service account JSON for Sheets access |
+| `recipe-sa-key` | recipe-api | Service account JSON for Sheets access |
 | `ht-oauth-token` | ht-flyer-sync | OAuth token JSON for Gmail + Drive access |
 
 ## Manual Operations
@@ -149,4 +159,26 @@ gcloud scheduler jobs pause ht-flyer-sync-weekly --location=us-central1 --projec
 gcloud run services delete recipe-api --region=us-central1 --project=<PROJECT_ID>
 gcloud run services delete recipe-mcp --region=us-central1 --project=<PROJECT_ID>
 gcloud run jobs delete ht-flyer-sync --region=us-central1 --project=<PROJECT_ID>
+```
+
+**Clean up old Secret Manager versions (one-off, e.g. after a billing spike):**
+`ht_flyer_sync_job.py` now prunes old `ht-oauth-token` versions automatically
+after each refresh, but any versions that already accumulated before that
+was added won't clean themselves up. Run once to destroy the backlog across
+all three secrets (keeps only the latest enabled version of each):
+```bash
+python3 scripts/cleanup_secret_versions.py --dry-run   # preview
+python3 scripts/cleanup_secret_versions.py              # destroy old versions (prompts for confirmation)
+```
+
+**Prune old Docker images (Container Registry / gcr.io):**
+Each `deploy.sh` run pushes a new image via Cloud Build without removing the
+previous one, so digests accumulate under `gcr.io/<PROJECT_ID>/<image-name>`.
+List and prune, keeping the newest `N` (e.g. 5):
+```bash
+IMAGE="gcr.io/<PROJECT_ID>/recipe-api"   # or ht-flyer-sync / recipe-mcp
+N=5
+gcloud container images list-tags "${IMAGE}" --format='get(digest)' --sort-by=~TIMESTAMP \
+  | tail -n +$((N + 1)) \
+  | xargs -r -I {} gcloud container images delete "${IMAGE}@{}" --quiet --force-delete-tags
 ```
